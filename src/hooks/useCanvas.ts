@@ -4,11 +4,64 @@ import { useState, useCallback, useEffect } from "react";
 import type { AlienUser, Pixel, CanvasState, UserCanvasState } from "@/lib/types";
 import { verifyIdentity, sendPayment } from "@/lib/alien-bridge";
 
+const SESSION_KEY = "human_canvas_session";
+
+interface StoredSession {
+  user: AlienUser;
+  state: UserCanvasState;
+}
+
+function saveSession(user: AlienUser, state: UserCanvasState) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ user, state }));
+  } catch {}
+}
+
+function loadSession(): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {}
+}
+
 export function useAlien() {
   const [user, setUser] = useState<AlienUser | null>(null);
   const [userState, setUserState] = useState<UserCanvasState | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-restore session on mount
+  useEffect(() => {
+    const session = loadSession();
+    if (session?.user) {
+      setUser(session.user);
+      setUserState(session.state);
+
+      // Re-register with backend (ensures user exists in this serverless instance)
+      fetch("/api/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          alienId: session.user.alienId,
+          displayName: session.user.displayName,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.state) setUserState(data.state);
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   const verify = useCallback(async () => {
     setIsVerifying(true);
@@ -25,6 +78,8 @@ export function useAlien() {
       if (data.error) throw new Error(data.error);
       setUser(data.user);
       setUserState(data.state);
+      // Persist session so page refresh keeps you logged in
+      saveSession(data.user, data.state);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed");
     } finally {
@@ -37,11 +92,14 @@ export function useAlien() {
     const res = await fetch("/api/place", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.id, x, y, color }),
+      body: JSON.stringify({ userId: user.id, x, y, color, fromDisplayName: user.displayName }),
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    if (data.state) setUserState(data.state);
+    if (data.state) {
+      setUserState(data.state);
+      saveSession(user, data.state);
+    }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("canvas-action"));
     }
@@ -55,11 +113,14 @@ export function useAlien() {
     const res = await fetch("/api/boost", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: user.id, x, y, level, transactionId: payment.transactionId }),
+      body: JSON.stringify({ userId: user.id, x, y, level, transactionId: payment.transactionId, fromDisplayName: user.displayName }),
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    if (data.state) setUserState(data.state);
+    if (data.state) {
+      setUserState(data.state);
+      saveSession(user, data.state);
+    }
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("canvas-action"));
     }
@@ -74,10 +135,19 @@ export function useAlien() {
       body: JSON.stringify({ alienId: user.alienId, displayName: user.displayName }),
     });
     const data = await res.json();
-    if (data.state) setUserState(data.state);
+    if (data.state) {
+      setUserState(data.state);
+      saveSession(user, data.state);
+    }
   }, [user]);
 
-  return { user, userState, isVerifying, error, verify, placePixel, boostPixel, refreshState };
+  const logout = useCallback(() => {
+    setUser(null);
+    setUserState(null);
+    clearSession();
+  }, []);
+
+  return { user, userState, isVerifying, error, verify, placePixel, boostPixel, refreshState, logout };
 }
 
 export function useCanvasData() {

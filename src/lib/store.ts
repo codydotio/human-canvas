@@ -71,6 +71,10 @@ seed();
 
 // ---- API ----
 
+export function getUser(userId: string): AlienUser | undefined {
+  return users.get(userId);
+}
+
 export function registerUser(alienId: string, displayName: string): AlienUser {
   const existing = users.get(alienId);
   if (existing) return existing;
