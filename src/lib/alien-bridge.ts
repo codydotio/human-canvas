@@ -1,30 +1,95 @@
-// ALIEN JS BRIDGE — Same pattern as other apps
-// 🚨 HACKATHON SWAP POINT 🚨
+/**
+ * Alien Mini App Bridge — Real SDK Integration
+ */
+
+// @ts-ignore: Dynamic import - packages installed at runtime
+import type { AlienIdentityResult, AlienPaymentResult } from "./types";
 
 const IS_MOCK = process.env.NEXT_PUBLIC_ALIEN_MODE !== "real";
 
-const NAMES = ["Pixel","Voxel","Raster","Vector","Hue","Chroma","Prism","Shade","Tint","Lumen"];
+const MOCK_NAMES = [
+  "Starlight", "Moonbeam", "Sunflower", "Raindrop", "Snowflake",
+  "Firefly", "Breeze", "Coral", "Willow", "Clover",
+];
 
-export async function verifyIdentity() {
-  if (IS_MOCK) {
-    await new Promise(r => setTimeout(r, 1500));
-    return { success: true, alienId: `alien_${Date.now().toString(36)}`, displayName: NAMES[Math.floor(Math.random() * NAMES.length)], proofOfHuman: true };
-  }
-  // 🚀 REAL ALIEN SSO SDK — UNCOMMENT AT HACKATHON
-  // import { alienVerifyIdentity } from './alien-sso-integration';
-  // const result = await alienVerifyIdentity();
-  // return { success: result.success, alienId: result.alienId, displayName: `Human ${result.alienId.slice(0,6)}`, proofOfHuman: result.proofOfHuman };
-  throw new Error("Implement real bridge");
+function randomMockName(): string {
+  return MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
 }
 
-export async function sendPayment(to: string, amount: number, memo: string) {
+function simulateDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function verifyIdentity(): Promise<AlienIdentityResult> {
   if (IS_MOCK) {
-    await new Promise(r => setTimeout(r, 800));
-    return { success: true, transactionId: `0x${Date.now().toString(16)}`, amount };
+    await simulateDelay(1500);
+    const mockId = `alien_${Date.now().toString(36)}`;
+    return { success: true, alienId: mockId, displayName: randomMockName(), proofOfHuman: true };
   }
-  // 🚀 REAL ALIEN WALLET — GET EXACT API FROM HACKATHON DOCS
-  // const wallet = (window as any).AlienWallet || (window as any).alien?.wallet;
-  // const tx = await wallet.sendPayment({ to: recipientAlienId, amount, currency: 'ALIEN', memo });
-  // return { success: true, transactionId: tx.id, amount };
-  throw new Error("Implement real bridge");
+
+  try {
+    // @ts-ignore: Dynamic import - packages installed at runtime
+    const bridge = await import("@alien_org/bridge") as any;
+    const { isBridgeAvailable, getLaunchParams } = bridge;
+    if (!isBridgeAvailable()) {
+      return { success: false, alienId: "", displayName: "", proofOfHuman: false };
+    }
+    const params = getLaunchParams();
+    if (!params?.authToken) {
+      return { success: false, alienId: "", displayName: "", proofOfHuman: false };
+    }
+    const payload = JSON.parse(atob(params.authToken.split(".")[1]));
+    const alienId = payload.sub;
+    return { success: true, alienId, displayName: `Human ${alienId.slice(0, 6)}`, proofOfHuman: true };
+  } catch (err) {
+    console.error("Alien bridge identity error:", err);
+    return { success: false, alienId: "", displayName: "", proofOfHuman: false };
+  }
+}
+
+export async function sendPayment(
+  recipientAlienId: string,
+  amount: number,
+  memo: string
+): Promise<AlienPaymentResult> {
+  if (IS_MOCK) {
+    await simulateDelay(2000);
+    return { success: true, transactionId: `tx_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}` };
+  }
+
+  try {
+    // @ts-ignore: Dynamic import - packages installed at runtime
+    const bridge = await import("@alien_org/bridge") as any;
+    const { request } = bridge;
+    const invoice = `canvas-boost-${Date.now().toString(36)}`;
+    const response = await request(
+      "payment:request",
+      {
+        recipient: recipientAlienId,
+        amount: String(amount * 1000000),
+        token: "ALIEN",
+        network: "alien",
+        invoice,
+        item: { title: `Pixel Boost: ${memo.slice(0, 30)}`, iconUrl: "https://human-canvas.vercel.app/icon.png", quantity: 1 },
+      },
+      "payment:response",
+      { timeout: 120000 }
+    );
+    if (response.status === "paid") {
+      return { success: true, transactionId: response.txHash || invoice };
+    }
+    return { success: false, transactionId: "" };
+  } catch (err) {
+    console.error("Alien bridge payment error:", err);
+    return { success: false, transactionId: "" };
+  }
+}
+
+export function isAlienBridgeAvailable(): boolean {
+  if (typeof window === "undefined") return false;
+  if (IS_MOCK) return true;
+  try {
+    const w = window as any;
+    return !!(w.__ALIEN_AUTH_TOKEN__ || w.__ALIEN_BRIDGE__);
+  } catch { return false; }
 }

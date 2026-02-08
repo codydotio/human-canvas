@@ -1,5 +1,17 @@
 // HUMAN CANVAS — Types
 
+export interface AlienIdentityResult {
+  success: boolean;
+  alienId: string;
+  displayName: string;
+  proofOfHuman: boolean;
+}
+
+export interface AlienPaymentResult {
+  success: boolean;
+  transactionId: string;
+}
+
 export interface AlienUser {
   id: string;
   alienId: string;
