@@ -12,8 +12,19 @@ const MOCK_NAMES = [
   "Firefly", "Breeze", "Coral", "Willow", "Clover",
 ];
 
-function randomMockName(): string {
-  return MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
+function getOrCreateMockIdentity(): { id: string; name: string } {
+  if (typeof window === "undefined") {
+    return { id: "alien_server", name: "ServerUser" };
+  }
+  const stored = localStorage.getItem("alien_mock_identity");
+  if (stored) {
+    try { return JSON.parse(stored); } catch { /* fall through */ }
+  }
+  const id = `alien_${Math.random().toString(36).slice(2, 10)}`;
+  const name = MOCK_NAMES[Math.floor(Math.random() * MOCK_NAMES.length)];
+  const identity = { id, name };
+  localStorage.setItem("alien_mock_identity", JSON.stringify(identity));
+  return identity;
 }
 
 function simulateDelay(ms: number): Promise<void> {
@@ -23,8 +34,8 @@ function simulateDelay(ms: number): Promise<void> {
 export async function verifyIdentity(): Promise<AlienIdentityResult> {
   if (IS_MOCK) {
     await simulateDelay(1500);
-    const mockId = `alien_${Date.now().toString(36)}`;
-    return { success: true, alienId: mockId, displayName: randomMockName(), proofOfHuman: true };
+    const mock = getOrCreateMockIdentity();
+    return { success: true, alienId: mock.id, displayName: mock.name, proofOfHuman: true };
   }
 
   try {

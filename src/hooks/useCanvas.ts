@@ -42,6 +42,9 @@ export function useAlien() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     if (data.state) setUserState(data.state);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("canvas-action"));
+    }
     return data.pixel;
   }, [user]);
 
@@ -57,6 +60,9 @@ export function useAlien() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     if (data.state) setUserState(data.state);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("canvas-action"));
+    }
     return data.pixel;
   }, [user]);
 
@@ -89,9 +95,16 @@ export function useCanvasData() {
     refresh();
     const es = new EventSource("/api/events");
     es.onmessage = () => refresh();
+    // Listen for local action events (serverless fallback)
+    const handleAction = () => setTimeout(refresh, 500);
+    window.addEventListener("canvas-action", handleAction);
     // Also poll every 5s for round timer updates
     const interval = setInterval(refresh, 5000);
-    return () => { es.close(); clearInterval(interval); };
+    return () => {
+      es.close();
+      window.removeEventListener("canvas-action", handleAction);
+      clearInterval(interval);
+    };
   }, [refresh]);
 
   return { canvasState, refresh };
