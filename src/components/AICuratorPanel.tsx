@@ -5,13 +5,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { CanvasNarrative, AIPixelSuggestion } from "@/lib/types";
 
 interface Props {
-  onSuggestPixel?: (x: number, y: number, color: string) => void;
+  onSuggestPixel?: (x: number, y: number, color: string) => Promise<void>;
 }
 
 export default function AICuratorPanel({ onSuggestPixel }: Props) {
   const [narrative, setNarrative] = useState<CanvasNarrative | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [usedSuggestions, setUsedSuggestions] = useState<Set<string>>(new Set());
+  const [placingId, setPlacingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchNarrative = async () => {
@@ -27,11 +28,17 @@ export default function AICuratorPanel({ onSuggestPixel }: Props) {
 
   if (!narrative) return null;
 
-  const handleUseSuggestion = (suggestion: AIPixelSuggestion) => {
-    if (onSuggestPixel) {
-      onSuggestPixel(suggestion.x, suggestion.y, suggestion.color);
+  const handleUseSuggestion = async (suggestion: AIPixelSuggestion) => {
+    if (!onSuggestPixel || placingId) return;
+    setPlacingId(suggestion.id);
+    try {
+      await onSuggestPixel(suggestion.x, suggestion.y, suggestion.color);
+      setUsedSuggestions(prev => new Set(prev).add(suggestion.id));
+    } catch {
+      // Pixel placement failed — don't mark as used
+    } finally {
+      setPlacingId(null);
     }
-    setUsedSuggestions(prev => new Set(prev).add(suggestion.id));
   };
 
   return (
@@ -98,13 +105,14 @@ export default function AICuratorPanel({ onSuggestPixel }: Props) {
                     {!usedSuggestions.has(suggestion.id) && onSuggestPixel && (
                       <button
                         onClick={() => handleUseSuggestion(suggestion)}
-                        className="text-[9px] px-2 py-1 rounded-full bg-cyan-500/20 text-cyan-400 font-medium flex-shrink-0"
+                        disabled={placingId === suggestion.id}
+                        className="text-[9px] px-2 py-1 rounded-full bg-cyan-500/20 text-cyan-400 font-medium flex-shrink-0 disabled:opacity-50"
                       >
-                        Use →
+                        {placingId === suggestion.id ? "Placing..." : "Use →"}
                       </button>
                     )}
                     {usedSuggestions.has(suggestion.id) && (
-                      <span className="text-[9px] text-green-400/60 flex-shrink-0">✓ Used</span>
+                      <span className="text-[9px] text-green-400/60 flex-shrink-0">✓ Placed</span>
                     )}
                   </div>
                 ))}

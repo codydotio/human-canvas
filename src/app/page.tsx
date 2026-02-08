@@ -29,13 +29,15 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [canvasState]);
 
-  const handlePixelClick = useCallback(async (x: number, y: number) => {
-    if (!user || !userState) return;
-    if (!userState.canPlaceThisRound) {
-      setMessage("Wait for next round!");
-      setTimeout(() => setMessage(null), 2000);
-      return;
+  // Auto-refresh user state when round changes so canPlaceThisRound updates
+  useEffect(() => {
+    if (canvasState && user) {
+      refreshState();
     }
+  }, [canvasState?.currentRound]);
+
+  const handlePixelClick = useCallback(async (x: number, y: number) => {
+    if (!user) return;
     try {
       await placePixel(x, y, selectedColor);
       setMessage("Pixel placed!");
@@ -44,7 +46,7 @@ export default function Home() {
       setMessage(err instanceof Error ? err.message : "Failed");
       setTimeout(() => setMessage(null), 2000);
     }
-  }, [user, userState, selectedColor, placePixel]);
+  }, [user, selectedColor, placePixel]);
 
   // Onboarding
   if (!user) {
@@ -158,9 +160,12 @@ export default function Home() {
 
       {/* AI Art Curator Panel */}
       <AICuratorPanel
-        onSuggestPixel={(x, y, color) => {
+        onSuggestPixel={async (x, y, color) => {
+          if (!user) throw new Error("Not verified");
           setSelectedColor(color);
-          handlePixelClick(x, y);
+          await placePixel(x, y, color);
+          setMessage("Pixel placed!");
+          setTimeout(() => setMessage(null), 1500);
         }}
       />
 
